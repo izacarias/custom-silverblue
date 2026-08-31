@@ -47,7 +47,7 @@ publish:
     - DEFAULT_TAG=latest
     - IMAGE_REGISTRY='$CI_REGISTRY'
     - podman login --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    - podman tag custom-silverblue:latest "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
+    - podman tag localhost/custom-silverblue:latest "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
     - podman push "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
 
 
