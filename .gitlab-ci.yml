@@ -11,16 +11,6 @@ build:
   tags:
     - idk-kns-staurn
   interruptible: true
-  rules:
-    # Pushes to the default branch, scheduled pipelines and manual "Run
-    # pipeline" runs build AND push, matching the GitHub `push`/`schedule`/
-    # `workflow_dispatch` triggers.
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      variables:
-        PUSH_IMAGE: "true"
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-      variables:
-        PUSH_IMAGE: "true"
   script:
     - set -euo pipefail
     - echo "Pipeline source ${CI_PIPELINE_SOURCE}, push image = ${PUSH_IMAGE:-false}"
@@ -44,6 +34,12 @@ publish:
   rules:
     # Only push if the build job has set the PUSH_IMAGE variable to "true"
     - if: '$PUSH_IMAGE == "true"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      variables:
+        PUSH_IMAGE: "true"
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      variables:
+        PUSH_IMAGE: "true"
   script:
     - set -euo pipefail
     - echo "Pipeline source ${CI_PIPELINE_SOURCE}, push image = ${PUSH_IMAGE:-false}"
