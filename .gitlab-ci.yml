@@ -26,6 +26,6 @@ build:
     - IMAGE_NAME=custom-silverblue
     - DEFAULT_TAG=latest
     - IMAGE_REGISTRY='$CI_REGISTRY'
-    - $(command -v podman) build --tag custom-silverblue:latest --file Containerfile .
+    - podman build --tag custom-silverblue:latest --file Containerfile .
 
 
