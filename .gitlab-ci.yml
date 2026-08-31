@@ -1,6 +1,6 @@
 stages:
   - build
-  - push
+  - publish
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
@@ -28,12 +28,19 @@ build:
     - DEFAULT_TAG=latest
     - IMAGE_REGISTRY='$CI_REGISTRY'
     - podman build --tag custom-silverblue:latest --file Containerfile .
+    - echo "PUSH_IMAGE=true" > build.env
+  artifacts:
+    reports:
+      dotenv: build.env
 
-push:
-  stage: push
+publish:
+  stage: publish
   tags:
     - idk-kns-staurn
   interruptible: true
+  needs:
+    - job: build
+      artifacts: true
   rules:
     # Only push if the build job has set the PUSH_IMAGE variable to "true"
     - if: '$PUSH_IMAGE == "true"'
