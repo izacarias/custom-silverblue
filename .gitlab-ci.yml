@@ -1,7 +1,5 @@
 stages:
   - build
-  - tags:
-    -  idk-kns-staurn
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
@@ -9,6 +7,8 @@ variables:
 
 build:
   stage: build
+  tags:
+    - idk-kns-staurn
   interruptible: true
   rules:
     # Pushes to the default branch, scheduled pipelines and manual "Run
