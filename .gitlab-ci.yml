@@ -23,7 +23,6 @@ build:
   script:
     - set -euo pipefail
     - echo "Pipeline source ${CI_PIPELINE_SOURCE}, push image = ${PUSH_IMAGE:-false}"
-    - echo "Podman version: $(podman --version) / Just version: $(just --version)"
     - IMAGE_NAME=custom-silverblue
     - DEFAULT_TAG=latest
     - IMAGE_REGISTRY='$CI_REGISTRY'
