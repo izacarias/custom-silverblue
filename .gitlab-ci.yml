@@ -1,5 +1,6 @@
 stages:
   - build
+  - push
 
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
@@ -27,5 +28,23 @@ build:
     - DEFAULT_TAG=latest
     - IMAGE_REGISTRY='$CI_REGISTRY'
     - podman build --tag custom-silverblue:latest --file Containerfile .
+
+push:
+  stage: push
+  tags:
+    - idk-kns-staurn
+  interruptible: true
+  rules:
+    # Only push if the build job has set the PUSH_IMAGE variable to "true"
+    - if: '$PUSH_IMAGE == "true"'
+  script:
+    - set -euo pipefail
+    - echo "Pipeline source ${CI_PIPELINE_SOURCE}, push image = ${PUSH_IMAGE:-false}"
+    - IMAGE_NAME=custom-silverblue
+    - DEFAULT_TAG=latest
+    - IMAGE_REGISTRY='$CI_REGISTRY'
+    - podman login --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - podman tag custom-silverblue:latest "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
+    - podman push "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
 
 
