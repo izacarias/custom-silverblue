@@ -1,0 +1,33 @@
+stages:
+  - build
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_SUBMODULE_DEPTH: 1
+
+build:
+  stage: build
+  interruptible: true
+  rules:
+    # Pushes to the default branch, scheduled pipelines and manual "Run
+    # pipeline" runs build AND push, matching the GitHub `push`/`schedule`/
+    # `workflow_dispatch` triggers.
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      variables:
+        PUSH_IMAGE: "true"
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      variables:
+        PUSH_IMAGE: "true"
+  script:
+    - set -euo pipefail
+    - echo "Pipeline source ${CI_PIPELINE_SOURCE}, push image = ${PUSH_IMAGE:-false}"
+    - apt-get update
+    - apt-get install -y --no-install-recommends podman jq curl ca-certificates git
+    - mkdir -p ~/bin && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/bin
+    - export PATH=$PATH:$HOME/bin && echo "Podman version:" $(podman --version) && echo "Just version:$(just --version)" 
+    - IMAGE_NAME=custom-silverblue
+    - DEFAULT_TAG=latest
+    - IMAGE_REGISTRY='$CI_REGISTRY'
+    - $(command -v podman) build --tag custom-silverblue:latest --file Containerfile .
+
+
