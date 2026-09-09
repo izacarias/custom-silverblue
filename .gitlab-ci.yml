@@ -9,7 +9,6 @@ variables:
 build:
   stage: build
   tags:
-    - idk-kns-staurn
     - tubs-kns
   interruptible: true
   rules:
@@ -23,7 +22,6 @@ build:
 publish:
   stage: publish
   tags:
-    - idk-kns-staurn
     - tubs-kns
   interruptible: true
   needs:
