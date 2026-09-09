@@ -37,3 +37,4 @@ publish:
     - podman login --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" "$IMAGE_REGISTRY"
     - podman tag localhost/custom-silverblue:latest "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
     - podman push "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
+    - echo "Image in the CR"
