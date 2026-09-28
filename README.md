@@ -1,93 +1,111 @@
 # custom-silverblue
 
+A custom [Fedora Silverblue](https://fedoraproxy.org/en/silverblue/) image,
+built from the official `quay.io/fedora-ostree-desktops/silverblue` base and
+extended with RPM Fusion codecs. The base image tag is defined by
+`BASE_IMAGE_TAG` in the [`Containerfile`](Containerfile) and is the single
+source of truth for the Fedora release.
 
+## What's added on top of stock Silverblue
 
-## Getting started
+- **RPM Fusion** free + nonfree repositories
+- **Full FFmpeg** (`ffmpeg`, with `libx264`, `libx265`, `libvpx-vp9` and
+  `nvenc` encoders) replacing Fedora's encoder-less `ffmpeg-free`
+- **`libavcodec-freeworld`** replacing `libavcodec-free`
+- The **`@multimedia`** group, minus `PackageKit-gstreamer-plugin`
+- **`intel-media-driver`** for Intel VAAPI
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Everything else — desktop, apps, Flatpak setup — is untouched upstream
+Silverblue.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## Layout
 
 ```
-cd existing_repo
-git remote add origin https://git.rz.tu-bs.de/i.zacarias/custom-silverblue.git
-git branch -M main
-git push -uf origin main
+Containerfile              multi-stage build; runs build_files/main.sh, then
+                           `bootc container lint` to validate the result
+build_files/main.sh        runs every NN-*.sh below, in order, then cleans up
+build_files/10-*.sh        numbered customisation scripts
+build_files/20-*.sh
+.gitlab-ci.yml             build + publish to the GitLab container registry
 ```
 
-## Integrate with your tools
+## Building locally
 
-* [Set up project integrations](https://git.rz.tu-bs.de/i.zacarias/custom-silverblue/-/settings/integrations)
+```bash
+podman build --file Containerfile --tag custom-silverblue:latest .
+```
 
-## Collaborate with your team
+The build ends with `bootc container lint`, so a successful build means the
+image passed all 14 checks with zero warnings.
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+## Adding packages
 
-## Test and Deploy
+Drop a new script into `build_files/` with a two-digit prefix. It is picked up
+automatically — no `Containerfile` change required, because the whole
+directory is bind-mounted from the `ctx` stage.
 
-Use the built-in continuous integration in GitLab.
+```bash
+cat > build_files/30-dev-tools.sh <<'EOF'
+#!/bin/bash
+set -ouex pipefail
+dnf install -y git tmux htop jq ripgrep
+EOF
+```
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+Scripts run as root, so `sudo` is unnecessary.
 
-***
+### Keep related packages in one transaction
 
-# Editing this README
+The multimedia script **must** stay a single `dnf` invocation with
+`--allowerasing`. The base image ships `libavcodec-free`/`ffmpeg-free`, which
+conflict with RPM Fusion's replacements; without `--allowerasing` dnf5 avoids
+the conflict by installing the **i686** build of `libavcodec-freeworld` —
+useless on x86_64, and it drags in ~100 i686 packages before the solve fails.
+Splitting the packages across separate `dnf` calls reintroduces the same bug.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## Installing the image
 
-## Suggestions for a good README
+The image is published to your GitLab container registry as
+`$CI_REGISTRY_IMAGE` (`<registry>/<project path>`).
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+```bash
+# bootc
+sudo bootc switch <registry>/<project path>:latest
 
-## Name
-Choose a self-explaining name for your project.
+# or, on rpm-ostree
+sudo rpm-ostree rebase ostree-unverified-registry:<registry>/<project path>:latest
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Available tags:
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+| Tag | Meaning |
+| --- | --- |
+| `latest` | most recent successful build of the default branch |
+| `44` | Fedora version (tracks `BASE_IMAGE_TAG`) |
+| `<commit sha>` | exact build, for rolling back |
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+## CI
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+Pipelines run on the default branch and on schedules:
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+1. **build** — `podman build`, tagging `latest`, the Fedora version, and the
+   commit SHA.
+2. **publish** — pushes all three tags to `$CI_REGISTRY/$CI_PROJECT_PATH`.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+> **Runner requirement:** both jobs must run on the *same* shell executor.
+> `publish` re-tags the image that `build` left in the local podman store, so
+> a Docker-executor runner (fresh container per job) will fail here.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## Notes
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- The stock Silverblue image already ships 14 of the 16 packages in the
+  `multimedia` group, so `@multimedia` on its own adds almost nothing —
+  RPM Fusion is what actually delivers the codecs.
+- There is **no `ffmpeg` in rpmfusion-nonfree**; the full build lives in
+  `rpmfusion-free`, while nonfree contributes `intel-media-driver`.
+- Fedora already ships `libva-intel-media-driver` (newer), and libva searches
+  both `dri/` and `dri-nonfree/`, so `intel-media-driver` is redundant but
+  harmless.
+- `--exclude=PackageKit-gstreamer-plugin` prints a
+  `matches only excluded packages` warning under dnf5. It is harmless and
+  the exclusion does apply.
