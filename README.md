@@ -26,7 +26,8 @@ Containerfile              multi-stage build; runs build_files/main.sh, then
 build_files/main.sh        runs every NN-*.sh below, in order, then cleans up
 build_files/10-*.sh        numbered customisation scripts
 build_files/20-*.sh
-.gitlab-ci.yml             build + publish to the GitLab container registry
+.gitlab-ci.yml             single job: build the image and push it to the
+                           GitLab container registry
 ```
 
 ## Building locally
@@ -86,15 +87,49 @@ Available tags:
 
 ## CI
 
-Pipelines run on the default branch and on schedules:
+Pipelines run on the default branch and on schedules as a **single job** that
+builds the image and pushes it. There is no separate publish stage, so nothing
+depends on the runner's podman store surviving between jobs.
 
-1. **build** — `podman build`, tagging `latest`, the Fedora version, and the
-   commit SHA.
-2. **publish** — pushes all three tags to `$CI_REGISTRY/$CI_PROJECT_PATH`.
+Tags pushed to `$CI_REGISTRY_IMAGE` are listed under
+[Installing the image](#installing-the-image):
 
-> **Runner requirement:** both jobs must run on the *same* shell executor.
-> `publish` re-tags the image that `build` left in the local podman store, so
-> a Docker-executor runner (fresh container per job) will fail here.
+Every push records its digest to an `image-digests.txt` job artifact, and the
+image carries `org.opencontainers.image.*` provenance labels (revision,
+source, created).
+
+### Runner
+
+The job shells out to `podman`, so it needs a **shell executor** — the runner
+is tagged `tubs-kns`.
+
+### Registry authentication — nothing to configure
+
+GitLab injects credentials for its built-in container registry automatically,
+so there is no secret to create:
+
+| Variable | Purpose |
+| --- | --- |
+| `CI_REGISTRY` | registry host |
+| `CI_REGISTRY_IMAGE` | image path (`<registry>/<project path>`) |
+| `CI_REGISTRY_USER` | `gitlab-ci-token`, scoped to this project |
+| `CI_REGISTRY_PASSWORD` | per-job token, auto-rotated, already masked |
+
+The job checks `CI_REGISTRY` up front and fails with a `::error::` annotation
+if it is empty, rather than failing later at push time.
+
+**Prerequisites:**
+
+1. Container registry enabled at the instance level on the GitLab server.
+2. Project → Settings → General → Visibility, project features and
+   permissions → **Container registry** enabled.
+
+**Fallback — scoped token.** If the built-in credentials are not usable,
+create a project access token (or deploy token) with the `write_registry`
+scope, store it as a **Masked + Protected** CI/CD variable, and point the two
+variable references in `.gitlab-ci.yml` at it. Marking it *Protected* is safe
+here, because pipelines only run on the default branch, which is protected by
+default.
 
 ## Notes
 
