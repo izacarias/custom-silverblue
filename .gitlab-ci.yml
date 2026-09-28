@@ -5,6 +5,11 @@ stages:
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
   GIT_SUBMODULE_DEPTH: 1
+  IMAGE_NAME: custom-silverblue
+
+# Both jobs run on the same runner, which must be a shell executor: `publish`
+# re-tags the image `build` left in the local podman store.
+# Tags published: latest, <fedora version>, <commit sha>.
 
 build:
   stage: build
@@ -15,9 +20,21 @@ build:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
   script:
-    - set -euo pipefail
-    - echo "Pipeline source ${CI_PIPELINE_SOURCE}"
-    - podman build --tag custom-silverblue:latest --file Containerfile .
+    - |
+      set -euo pipefail
+      echo "Pipeline source ${CI_PIPELINE_SOURCE}"
+
+      # Single source of truth for the Fedora version is the Containerfile.
+      FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
+      test -n "${FEDORA_VERSION}"
+      echo "Building Fedora Silverblue ${FEDORA_VERSION}"
+
+      podman build \
+        --file Containerfile \
+        --tag "${IMAGE_NAME}:latest" \
+        --tag "${IMAGE_NAME}:${FEDORA_VERSION}" \
+        --tag "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" \
+        .
 
 publish:
   stage: publish
@@ -30,11 +47,21 @@ publish:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
   script:
-    - set -euo pipefail
-    - IMAGE_NAME=custom-silverblue
-    - DEFAULT_TAG=latest
-    - IMAGE_REGISTRY="$CI_REGISTRY"
-    - podman login --username "$CI_REGISTRY_USER" --password "$CI_REGISTRY_PASSWORD" "$IMAGE_REGISTRY"
-    - podman tag localhost/custom-silverblue:latest "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
-    - podman push "$IMAGE_REGISTRY/$CI_PROJECT_PATH:$DEFAULT_TAG"
-    - echo "Done"
+    - |
+      set -euo pipefail
+
+      FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
+      test -n "${FEDORA_VERSION}"
+
+      DEST="${CI_REGISTRY}/${CI_PROJECT_PATH}"
+      podman login \
+        --username "${CI_REGISTRY_USER}" \
+        --password "${CI_REGISTRY_PASSWORD}" \
+        "${CI_REGISTRY}"
+
+      for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
+        podman tag "localhost/${IMAGE_NAME}:${TAG}" "${DEST}:${TAG}"
+        podman push "${DEST}:${TAG}"
+        echo "Pushed ${DEST}:${TAG}"
+      done
+      echo "Done"
