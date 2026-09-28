@@ -18,7 +18,7 @@ workflow:
     # TEMPORARY: lets this branch be validated before merging. Remove before merge.
     - if: '$CI_COMMIT_BRANCH =~ /^ci\//'
 
-image:
+build-image:
   stage: build
   tags:
     - tubs-kns
