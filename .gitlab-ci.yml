@@ -67,7 +67,15 @@ image-build:
         "${CI_REGISTRY}"
 
       for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
-        podman tag "localhost/${IMAGE_NAME}:${TAG}" "${CI_REGISTRY_IMAGE}:${TAG}"
+        
+        # Additional steps to rechunk with chunkah
+        export CHUNKAH_CONFIG_STR="$(podman inspect localhost/${IMAGE_NAME}:${TAG})"
+        echo "Rechunking image localhost/${IMAGE_NAME}:${TAG} with chunkah"
+        podman run --rm --mount=type=image,src=localhost/${IMAGE_NAME}:${TAG},dest=/chunkah \
+          -e CHUNKAH_CONFIG_STR quay.io/coreos/chunkah build \
+          -t localhost/${IMAGE_NAME}-chunked:${TAG} | podman load
+
+        podman tag "localhost/${IMAGE_NAME}-chunked:${TAG}" "${CI_REGISTRY_IMAGE}:${TAG}"
         podman push "${CI_REGISTRY_IMAGE}:${TAG}" --digestfile "/tmp/digest.${TAG}"
         printf '%-12s %s\n' "${TAG}" "$(cat "/tmp/digest.${TAG}")" \
           | tee -a image-digests.txt
