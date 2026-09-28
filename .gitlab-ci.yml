@@ -1,67 +1,88 @@
+# Single job: build and push happen together, so the pipeline has no
+# dependency on the runner's podman store persisting between jobs.
+#
+# Published tags: latest, <fedora version>, <commit sha>.
+# Fedora version is read from BASE_IMAGE_TAG in the Containerfile.
+
 stages:
   - build
-  - publish
 
 variables:
-  GIT_SUBMODULE_STRATEGY: recursive
-  GIT_SUBMODULE_DEPTH: 1
   IMAGE_NAME: custom-silverblue
 
-# Both jobs run on the same runner, which must be a shell executor: `publish`
-# re-tags the image `build` left in the local podman store.
-# Tags published: latest, <fedora version>, <commit sha>.
+# Without this, pushes to branches with no matching job create empty pipelines.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    # TEMPORARY: lets this branch be validated before merging. Remove before merge.
+    - if: '$CI_COMMIT_BRANCH =~ /^ci\//'
 
-build:
+image:
   stage: build
   tags:
     - tubs-kns
   interruptible: true
+  # Serialises overlapping publishes (schedule vs. push) instead of racing.
+  resource_group: registry
+  timeout: 1h
   rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    # TEMPORARY: lets this branch be validated before merging. Remove before merge.
+    - if: '$CI_COMMIT_BRANCH =~ /^ci\//'
   script:
     - |
       set -euo pipefail
       echo "Pipeline source ${CI_PIPELINE_SOURCE}"
 
-      # Single source of truth for the Fedora version is the Containerfile.
+      # Fail early and clearly if the container registry is unavailable,
+      # rather than at push time.
+      if [ -z "${CI_REGISTRY:-}" ]; then
+        echo "::error::Container registry is not enabled on this project or instance"
+        exit 1
+      fi
+
       FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
       test -n "${FEDORA_VERSION}"
-      echo "Building Fedora Silverblue ${FEDORA_VERSION}"
+      echo "Building Fedora Silverblue ${FEDORA_VERSION} at ${CI_COMMIT_SHA}"
+
+      # Always exist so artifacts: paths never matches nothing.
+      : > image-digests.txt
 
       podman build \
         --file Containerfile \
+        --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" \
+        --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
         --tag "${IMAGE_NAME}:latest" \
         --tag "${IMAGE_NAME}:${FEDORA_VERSION}" \
         --tag "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" \
         .
 
-publish:
-  stage: publish
-  tags:
-    - tubs-kns
-  interruptible: true
-  needs:
-    - job: build
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
-  script:
-    - |
-      set -euo pipefail
-
-      FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
-      test -n "${FEDORA_VERSION}"
-
-      DEST="${CI_REGISTRY}/${CI_PROJECT_PATH}"
-      podman login \
+      # stdin keeps the token out of the process list.
+      printf '%s' "${CI_REGISTRY_PASSWORD}" | podman login \
         --username "${CI_REGISTRY_USER}" \
-        --password "${CI_REGISTRY_PASSWORD}" \
+        --password-stdin \
         "${CI_REGISTRY}"
 
       for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
-        podman tag "localhost/${IMAGE_NAME}:${TAG}" "${DEST}:${TAG}"
-        podman push "${DEST}:${TAG}"
-        echo "Pushed ${DEST}:${TAG}"
+        podman tag "localhost/${IMAGE_NAME}:${TAG}" "${CI_REGISTRY_IMAGE}:${TAG}"
+        podman push "${CI_REGISTRY_IMAGE}:${TAG}" --digestfile "/tmp/digest.${TAG}"
+        printf '%-12s %s\n' "${TAG}" "$(cat "/tmp/digest.${TAG}")" \
+          | tee -a image-digests.txt
       done
       echo "Done"
+  after_script:
+    - |
+      # Free the tags; layer cache is kept so the next build stays warm.
+      FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
+      for NAME in "localhost/${IMAGE_NAME}" "${CI_REGISTRY_IMAGE}"; do
+        for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
+          podman rmi -f "${NAME}:${TAG}" >/dev/null 2>&1 || true
+        done
+      done
+  artifacts:
+    name: "image-digests-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - image-digests.txt
