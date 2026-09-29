@@ -23,6 +23,8 @@ Silverblue.
 ```
 Containerfile              multi-stage build; runs build_files/main.sh, then
                            `bootc container lint` to validate the result
+Containerfile.rechunk      optional chunkah re-splitting of the built image
+                           into content-based layers (CI: RECHUNK variable)
 build_files/main.sh        runs every NN-*.sh below, in order, then cleans up
 build_files/10-*.sh        numbered customisation scripts
 build_files/20-*.sh
@@ -77,6 +79,13 @@ sudo bootc switch <registry>/<project path>:latest
 sudo rpm-ostree rebase ostree-unverified-registry:<registry>/<project path>:latest
 ```
 
+> [!NOTE]
+> With the CI `RECHUNK` option enabled (see
+> [Content-based layers](#content-based-layers-optional)), the published image
+> is a *plain* bootc image: `bootc switch` works as usual, but the
+> `rpm-ostree rebase` path may no longer work, because the ostree repository
+> is stripped from the image.
+
 Available tags:
 
 | Tag | Meaning |
@@ -97,6 +106,32 @@ Tags pushed to `$CI_REGISTRY_IMAGE` are listed under
 Every push records its digest to an `image-digests.txt` job artifact, and the
 image carries `org.opencontainers.image.*` provenance labels (revision,
 source, created).
+
+### Content-based layers (optional)
+
+Set the `RECHUNK` variable to `true` — Run pipeline → variables, or in a
+schedule's variables — and the job re-splits the finished image into
+content-based layers with [chunkah](https://github.com/coreos/chunkah)
+(`Containerfile.rechunk`) before pushing. Layers then follow the image's
+content (roughly, per package) instead of the `Containerfile`'s `RUN`s, so
+unchanged packages land in unchanged layers and client updates only pull what
+actually changed.
+
+The default is `false`, which leaves the image exactly as the `Containerfile`
+builds it. When enabled:
+
+- The result is a **plain bootc image**: following chunkah's recipe for
+  ostree-based images, the base's ostree repository (`/sysroot`) and the
+  stale `ostree.*`/`rpmostree.*` labels are stripped (see the note under
+  [Installing the image](#installing-the-image)). The image config
+  (`CMD`, `containers.bootc=1`, provenance labels) is preserved.
+- Layers are capped at 128 (`--max-layers`); with fewer layers the packing
+  gets coarser, with more, pull overhead grows.
+- Costs: one extra pass over the ~6 GB image (~3 min) and ~6 GB of scratch
+  space on the runner. It runs once; all three tags are then re-pointed at
+  the chunked image before the push.
+- chunkah is pinned to `quay.io/coreos/chunkah:v0.7.0` in
+  `Containerfile.rechunk`; bump the tag there to update.
 
 ### Runner
 
