@@ -50,7 +50,18 @@ image-build:
       # Always exist so artifacts: paths never matches nothing.
       : > image-digests.txt
 
-      podman build \
+      # podman build \
+      #   --file Containerfile \
+      #   --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      #   --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" \
+      #   --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
+      #   --tag "${IMAGE_NAME}:latest" \
+      #   --tag "${IMAGE_NAME}:${FEDORA_VERSION}" \
+      #   --tag "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" \
+      #   .
+
+      buildah build \
+        --log-level=debug \
         --file Containerfile \
         --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" \
@@ -59,36 +70,29 @@ image-build:
         --tag "${IMAGE_NAME}:${FEDORA_VERSION}" \
         --tag "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" \
         .
+      echo "Build: done"
 
       # stdin keeps the token out of the process list.
-      printf '%s' "${CI_REGISTRY_PASSWORD}" | podman login \
+      printf '%s' "${CI_REGISTRY_PASSWORD}" | buildah login \
         --username "${CI_REGISTRY_USER}" \
         --password-stdin \
         "${CI_REGISTRY}"
+      echo "Logging in to registry: done"
 
       for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
-        
-        # Additional steps to rechunk with chunkah
-        IMG="localhost/${IMAGE_NAME}:${TAG}"
-
-        echo "Rechunking image ${IMG} with chunkah"
-        podman run --rm --mount=type=image,src=$IMG,dest=/chunkah \
-          -e CHUNKAH_CONFIG_STR="$(podman inspect $IMG)" quay.io/coreos/chunkah build \
-          --prune /sysroot/ --max-layers 256 -t localhost/${IMAGE_NAME}-chunked:${TAG} | podman load
-
-        podman tag "localhost/${IMAGE_NAME}-chunked:${TAG}" "${CI_REGISTRY_IMAGE}:${TAG}"
-        podman push "${CI_REGISTRY_IMAGE}:${TAG}" --digestfile "/tmp/digest.${TAG}"
+        buildah tag "localhost/${IMAGE_NAME}:${TAG}" "${CI_REGISTRY_IMAGE}:${TAG}"
+        buildah push "${CI_REGISTRY_IMAGE}:${TAG}" --digestfile "/tmp/digest.${TAG}"
         printf '%-12s %s\n' "${TAG}" "$(cat "/tmp/digest.${TAG}")" \
           | tee -a image-digests.txt
       done
-      echo "Done"
+      echo "Pushing images: done"
   after_script:
     - |
       # Free the tags; layer cache is kept so the next build stays warm.
       FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
       for NAME in "localhost/${IMAGE_NAME}" "${CI_REGISTRY_IMAGE}"; do
         for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
-          podman rmi -f "${NAME}:${TAG}" >/dev/null 2>&1 || true
+          buildah rmi -f "${NAME}:${TAG}" >/dev/null 2>&1 || true
         done
       done
   artifacts:
