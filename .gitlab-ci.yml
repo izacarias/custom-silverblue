@@ -12,7 +12,7 @@ variables:
   # Set to true (Run pipeline -> variables, or in a schedule) to split the
   # image into content-based layers with chunkah before pushing.
   # See Containerfile.rechunk.
-  RECHUNK: "false"
+  RECHUNK: "true"
 
 # Without this, pushes to branches with no matching job create empty pipelines.
 workflow:
