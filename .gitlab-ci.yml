@@ -1,11 +1,14 @@
-# Single job: build and push happen together, so the pipeline has no
-# dependency on the runner's podman store persisting between jobs.
+# image-build is a single job: build and push happen together, so the
+# pipeline has no dependency on the runner's podman store persisting between
+# jobs. iso-build is self-contained the same way: it pulls the image back
+# from the registry instead of reusing image-build's local copy.
 #
 # Published tags: latest, <fedora version>, <commit sha>.
 # Fedora version is read from BASE_IMAGE_TAG in the Containerfile.
 
 stages:
   - build
+  - iso
 
 variables:
   IMAGE_NAME: custom-silverblue
@@ -13,6 +16,14 @@ variables:
   # image into content-based layers with chunkah before pushing.
   # See Containerfile.rechunk.
   RECHUNK: "true"
+  # Set to true (Run pipeline -> variables) to additionally build an
+  # installation ISO from the freshly pushed image and publish it to the
+  # generic package registry. See Containerfile.installer and iso-build below.
+  BUILD_ISO: "false"
+  # osbuild's bootc-image-builder, used by iso-build. The project publishes
+  # no version tags, so this is pinned by digest (as of 2026-06-18) to keep
+  # an upstream release from changing the ISO build under us.
+  BIB_IMAGE: "quay.io/centos-bootc/bootc-image-builder@sha256:2b52843ea2bfda73b0a08d97e76b734393b1d3a804681b9fabb26723bd3a2f0b"
 
 # Without this, pushes to branches with no matching job create empty pipelines.
 workflow:
@@ -21,6 +32,8 @@ workflow:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     # TEMPORARY: lets this branch be validated before merging. Remove before merge.
     - if: '$CI_COMMIT_BRANCH =~ /^ci\//'
+    # An explicit ISO request (Run pipeline -> variables) is enough on its own.
+    - if: '$BUILD_ISO == "true"'
 
 image-build:
   stage: build
@@ -35,6 +48,8 @@ image-build:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     # TEMPORARY: lets this branch be validated before merging. Remove before merge.
     - if: '$CI_COMMIT_BRANCH =~ /^ci\//'
+    # An explicit ISO request (Run pipeline -> variables) is enough on its own.
+    - if: '$BUILD_ISO == "true"'
   script:
     - |
       set -euo pipefail
@@ -132,3 +147,162 @@ image-build:
     name: "image-digests-${CI_COMMIT_SHORT_SHA}"
     paths:
       - image-digests.txt
+
+# Opt-in (BUILD_ISO=true): build an installation ISO from the image that
+# image-build just pushed and publish it to the generic package registry.
+#
+# The ISO is made by osbuild's bootc-image-builder, which needs two inputs:
+# Containerfile.installer adds Anaconda to a copy of the image (that copy
+# becomes the live installer environment), and the image itself is embedded in
+# the ISO as the payload Anaconda installs.
+iso-build:
+  stage: iso
+  tags:
+    - tubs-kns
+  interruptible: true
+  # Serialises ISO builds the same way image-build serialises pushes.
+  resource_group: iso
+  timeout: 2h
+  rules:
+    - if: '$BUILD_ISO == "true"'
+  needs:
+    - job: image-build
+  script:
+    - |
+      set -euo pipefail
+      echo "Building installation ISO for ${CI_COMMIT_SHA}"
+
+      FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
+      test -n "${FEDORA_VERSION}"
+
+      # Fail early and clearly rather than an hour into the build.
+      if [ -z "${CI_REGISTRY:-}" ]; then
+        echo "::error::Container registry is not enabled on this project or instance"
+        exit 1
+      fi
+      if ! command -v podman >/dev/null 2>&1; then
+        echo "::error::podman is required to run bootc-image-builder"
+        exit 1
+      fi
+      # bootc-image-builder only supports rootful podman (there is no
+      # rootless fallback in its CLI), and buildah has to share the storage
+      # with the podman that runs it, so every container command below goes
+      # through the same wrapper: as root, or through passwordless sudo.
+      if [ "$(id -u)" -eq 0 ]; then
+        ROOT=""
+      elif sudo -n podman --version >/dev/null 2>&1 \
+        && sudo -n buildah --version >/dev/null 2>&1; then
+        # -n everywhere: a password prompt would hang the job (no tty).
+        ROOT="sudo -n"
+      else
+        echo "::error::iso-build needs rootful podman (bootc-image-builder does not run rootless), but sudo as uid $(id -u) asks for a password. Give the runner user passwordless sudo for podman and buildah, e.g. in /etc/sudoers.d/gitlab-runner: '<user> ALL=(root) NOPASSWD: /usr/bin/podman, /usr/bin/buildah' (see README, Installation ISO)"
+        exit 1
+      fi
+      # osbuild needs its SELinux policy, and only the host can provide it:
+      # bootc-image-builder runs privileged, so what applies inside is the
+      # host's policy.
+      if command -v getenforce >/dev/null 2>&1 \
+        && [ "$(getenforce)" = "Enforcing" ] \
+        && ! rpm -q osbuild-selinux >/dev/null 2>&1; then
+        echo "::error::SELinux is enforcing but osbuild-selinux is not installed (required by bootc-image-builder)"
+        exit 1
+      fi
+
+      # Both images, osbuild's store and the ISO live side by side here.
+      STORAGE_ROOT="$(${ROOT} podman info --format '{{.Store.GraphRoot}}')"
+      echo "uid $(id -u), container storage ${STORAGE_ROOT}"
+      FREE_GIB="$(( $(df -Pk "${STORAGE_ROOT}" | awk 'NR==2 {print $4}') / 1024 / 1024 ))"
+      if [ "${FREE_GIB}" -lt 30 ]; then
+        echo "::error::ISO build needs about 30 GiB of scratch space, ${FREE_GIB} GiB free on ${STORAGE_ROOT}"
+        exit 1
+      fi
+
+      # stdin keeps the token out of the process list.
+      printf '%s' "${CI_REGISTRY_PASSWORD}" | ${ROOT} buildah login \
+        --username "${CI_REGISTRY_USER}" \
+        --password-stdin \
+        "${CI_REGISTRY}"
+
+      # Pulled under its registry name on purpose: the kickstart that
+      # bootc-image-builder generates ends with
+      # `bootc switch --transport registry <payload ref>`, so this ref is what
+      # the installed system ends up tracking.
+      ${ROOT} buildah pull "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+      echo "Pulling image: done"
+
+      ${ROOT} buildah build \
+        --log-level=info \
+        --file Containerfile.installer \
+        --from "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" \
+        --tag "localhost/${IMAGE_NAME}-installer:${CI_COMMIT_SHORT_SHA}" \
+        .
+      echo "Installer image: done"
+
+      rm -rf iso-out
+      mkdir -p iso-out
+      # bootc-image-builder is run privileged and with the caller's container
+      # store mounted, because that is where both images above live.
+      ${ROOT} podman run --rm \
+        --privileged \
+        --security-opt label=type:unconfined_t \
+        -v "${PWD}/iso-out:/output" \
+        -v "${STORAGE_ROOT}:/var/lib/containers/storage" \
+        "${BIB_IMAGE}" \
+        --type bootc-installer \
+        --installer-payload-ref "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" \
+        "localhost/${IMAGE_NAME}-installer:${CI_COMMIT_SHORT_SHA}"
+      echo "ISO build: done"
+
+      ISO_BUILD="$(find iso-out -type f -name '*.iso' -print -quit)"
+      if [ -z "${ISO_BUILD}" ]; then
+        echo "::error::bootc-image-builder produced no ISO, iso-out contains:"
+        find iso-out -maxdepth 3 -print
+        exit 1
+      fi
+
+      ISO_NAME="custom-silverblue-${FEDORA_VERSION}-${CI_COMMIT_SHORT_SHA}.iso"
+      mv "${ISO_BUILD}" "${ISO_NAME}"
+      sha256sum "${ISO_NAME}" | tee "${ISO_NAME}.sha256"
+      OSBUILD_MANIFEST="$(find iso-out -maxdepth 1 -name 'manifest-*.json' -print -quit)"
+      if [ -n "${OSBUILD_MANIFEST}" ]; then
+        cp "${OSBUILD_MANIFEST}" iso-manifest.json
+      fi
+
+      # Publish to the generic package registry; re-running the job replaces
+      # what the previous run of the same commit uploaded.
+      PKG_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/installer-iso/${CI_COMMIT_SHORT_SHA}"
+      curl --fail --silent --show-error --request DELETE \
+        --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        "${PKG_URL}/${ISO_NAME}" \
+        >/dev/null || true
+      for FILE in "${ISO_NAME}" "${ISO_NAME}.sha256"; do
+        curl --fail --show-error \
+          --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          --upload-file "${FILE}" \
+          "${PKG_URL}/${FILE}"
+      done
+      echo "Published: ${PKG_URL}/${ISO_NAME}"
+  after_script:
+    - |
+      # Same wrapper as in script (after_script runs in its own shell), so the
+      # images are dropped from the store they were built into.
+      if [ "$(id -u)" -eq 0 ]; then
+        ROOT=""
+      elif sudo -n buildah --version >/dev/null 2>&1; then
+        ROOT="sudo -n"
+      else
+        ROOT=""
+      fi
+      ${ROOT} buildah rmi -f \
+        "localhost/${IMAGE_NAME}-installer:${CI_COMMIT_SHORT_SHA}" \
+        "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" >/dev/null 2>&1 || true
+      # The pinned bootc-image-builder and the layer cache stay warm for the
+      # next run; drop what this job layered on top of them.
+      ${ROOT} buildah rmi --prune -f >/dev/null 2>&1 || true
+      rm -rf iso-out iso-manifest.json
+      rm -f custom-silverblue-*.iso custom-silverblue-*.iso.sha256
+  artifacts:
+    name: "iso-${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - "*.sha256"
+      - iso-manifest.json
