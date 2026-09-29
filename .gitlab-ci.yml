@@ -61,7 +61,7 @@ image-build:
       #   .
 
       buildah build \
-        --log-level=debug \
+        --log-level=info \
         --file Containerfile \
         --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         --label "org.opencontainers.image.revision=${CI_COMMIT_SHA}" \
@@ -81,7 +81,7 @@ image-build:
 
       for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
         buildah tag "localhost/${IMAGE_NAME}:${TAG}" "${CI_REGISTRY_IMAGE}:${TAG}"
-        buildah push "${CI_REGISTRY_IMAGE}:${TAG}" --digestfile "/tmp/digest.${TAG}"
+        buildah push --digestfile "/tmp/digest.${TAG}" "docker://${CI_REGISTRY_IMAGE}:${TAG}" 
         printf '%-12s %s\n' "${TAG}" "$(cat "/tmp/digest.${TAG}")" \
           | tee -a image-digests.txt
       done
