@@ -19,7 +19,7 @@ variables:
   # Set to true (Run pipeline -> variables) to additionally build an
   # installation ISO from the freshly pushed image and publish it to the
   # generic package registry. See Containerfile.installer and iso-build below.
-  BUILD_ISO: "false"
+  BUILD_ISO: "true"
   # osbuild's bootc-image-builder, used by iso-build. The project publishes
   # no version tags, so this is pinned by digest (as of 2026-06-18) to keep
   # an upstream release from changing the ISO build under us.
