@@ -1,0 +1,50 @@
+# Anaconda installer environment for the optional installation ISO.
+#
+# This image is never pushed to the registry: the iso-build job in
+# .gitlab-ci.yml builds it from the image image-build just published, hands it
+# to bootc-image-builder together with that image as the payload to install,
+# and deletes it afterwards. See README.md, "Installation ISO".
+#
+# The package list and the two follow-up commands are the recipe documented
+# for bootc-image-builder's `bootc-installer` image type:
+# https://github.com/osbuild/image-builder/blob/main/bootc-image-builder/README.md
+#
+# Build with (buildah < 1.44 also needs --pull=never):
+#
+#   buildah build --file Containerfile.installer \
+#     --from localhost/custom-silverblue:<tag> \
+#     --tag localhost/custom-silverblue-installer:<tag> .
+
+ARG BASE_IMAGE_REF="localhost/custom-silverblue:latest"
+
+FROM ${BASE_IMAGE_REF}
+
+# Anaconda itself plus the dracut/lorax bits an installer environment needs.
+# lorax-templates-generic is the package name Fedora uses (it used to be
+# lorax-templates-fedora); bootc-image-builder would install it on its own,
+# but the installer environment is built from this image.
+RUN dnf install -y \
+      anaconda \
+      anaconda-install-env-deps \
+      anaconda-dracut \
+      dracut-config-generic \
+      dracut-network \
+      net-tools \
+      squashfs-tools \
+      grub2-efi-x64-cdboot \
+      python3-mako \
+      lorax-templates-generic \
+      biosdevname \
+      prefixdevname \
+    && dnf clean all
+
+# Fedora 43 and newer keep the EFI binaries under /usr/lib/efi/<pkg>/<ver>/EFI
+# while lorax expects them in /boot/efi.
+RUN mkdir -p /boot/efi && cp -a /usr/lib/efi/*/*/EFI /boot/efi
+
+# lorax wants to create a symlink in /mnt pointing at /var/mnt, which does not
+# exist in the image yet.
+RUN mkdir -p /var/mnt
+
+# Matches the final CMD of the image this is built from (see Containerfile).
+CMD ["/sbin/init"]

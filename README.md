@@ -25,11 +25,14 @@ Containerfile              multi-stage build; runs build_files/main.sh, then
                            `bootc container lint` to validate the result
 Containerfile.rechunk      optional chunkah re-splitting of the built image
                            into content-based layers (CI: RECHUNK variable)
+Containerfile.installer    Anaconda installer environment for the optional
+                           installation ISO (CI: BUILD_ISO variable)
 build_files/main.sh        runs every NN-*.sh below, in order, then cleans up
 build_files/10-*.sh        numbered customisation scripts
 build_files/20-*.sh
-.gitlab-ci.yml             single job: build the image and push it to the
-                           GitLab container registry
+.gitlab-ci.yml             image-build: build the image and push it to the
+                           GitLab container registry; iso-build: optional
+                           installation ISO
 ```
 
 ## Building locally
@@ -98,7 +101,8 @@ Available tags:
 
 Pipelines run on the default branch and on schedules as a **single job** that
 builds the image and pushes it. There is no separate publish stage, so nothing
-depends on the runner's podman store surviving between jobs.
+depends on the runner's podman store surviving between jobs. An opt-in second
+job builds an installation ISO ([below](#installation-iso-optional)).
 
 Tags pushed to `$CI_REGISTRY_IMAGE` are listed under
 [Installing the image](#installing-the-image):
@@ -133,10 +137,82 @@ builds it. When enabled:
 - chunkah is pinned to `quay.io/coreos/chunkah:v0.7.0` in
   `Containerfile.rechunk`; bump the tag there to update.
 
+### Installation ISO (optional)
+
+Set the `BUILD_ISO` variable to `true` — Run pipeline → variables, or a
+schedule's variables — and a second stage (`iso-build`) builds an **Anaconda
+installation ISO** from the image `image-build` just pushed, then uploads it
+to the generic package registry:
+
+```
+<project URL>/-/packages/generic/installer-iso/<commit sha>/custom-silverblue-<fedora version>-<commit sha>.iso
+```
+
+A `.sha256` is uploaded next to it, the download URL is printed in the job
+log, and the checksum plus the osbuild manifest are kept as job artifacts.
+Re-running the job replaces the previous upload for the same commit.
+
+Nothing else changes without the variable: `iso-build` is not created at all
+unless `BUILD_ISO=true`, so ordinary builds stay a single job.
+
+How it works:
+
+1. [`Containerfile.installer`](Containerfile.installer) builds the *installer
+   environment* — the image that was just published, plus Anaconda
+   (`anaconda`, `anaconda-dracut`, `anaconda-install-env-deps`, lorax
+   templates, …). It is built from the pushed image and is never pushed
+   itself.
+2. [bootc-image-builder](https://github.com/osbuild/image-builder) (osbuild,
+   pinned by digest as `BIB_IMAGE`) packs that environment into an ISO and
+   embeds the published image as the payload Anaconda installs. Both images
+   are read from the runner's own container store, which is why the job pulls
+   the image back from the registry first instead of relying on
+   `image-build`'s local tags.
+3. The ISO is checksummed and uploaded to the generic package registry with
+   `$CI_JOB_TOKEN` — job artifacts would be far too small (~5 GB ISO).
+
+**Runner requirements.** The job verifies these up front and fails with a
+`::error::` annotation rather than an hour into the build:
+
+| Requirement | Why |
+| --- | --- |
+| rootful podman (runner as root, or passwordless `sudo`) | bootc-image-builder refuses to run rootless, and buildah has to use the same store |
+| `podman` next to `buildah` | bootc-image-builder is executed with it |
+| ~30 GiB free next to the container store | both images, osbuild's store and the ISO live side by side |
+| `osbuild-selinux` installed while SELinux is enforcing | bootc-image-builder runs privileged, so the host's policy applies inside |
+
+The first run pulls `BIB_IMAGE` (~1.5 GB); later runs keep it warm.
+
+**One-time runner setup.** The runner user must be able to run `podman` and
+`buildah` without a password prompt (the job probes for it and fails with a
+`::error::` naming this file otherwise):
+
+```bash
+# /etc/sudoers.d/gitlab-runner  (mode 0440)
+gitlab-runner ALL=(root) NOPASSWD: /usr/bin/podman, /usr/bin/buildah
+```
+
+Everything the job does with containers goes through that `sudo`, which is
+also what keeps buildah and the bib podman on the same container store
+(`id -u` root needs no configuration at all).
+
+Two things to know about the resulting ISO:
+
+- Anaconda runs in **text mode**: bootc-image-builder hardcodes the
+  `inst.text` kernel option for the `bootc-installer` image type.
+- The payload is installed offline from the ISO, but the generated kickstart
+  then finishes with `bootc switch --mutate-in-place --transport registry
+  <payload ref>` — Anaconda pulls `$CI_REGISTRY_IMAGE:<commit sha>` at the
+  very end to point the installed system at its update source. That last step
+  needs network access, and if the registry image is not pullable
+  anonymously, also registry credentials; without them it reports an error
+  after the payload is already installed.
+
 ### Runner
 
 The job shells out to `podman`, so it needs a **shell executor** — the runner
-is tagged `tubs-kns`.
+is tagged `tubs-kns`. `iso-build` additionally needs rootful podman
+(see [Installation ISO](#installation-iso-optional)).
 
 ### Registry authentication — nothing to configure
 
