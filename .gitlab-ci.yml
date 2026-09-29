@@ -9,6 +9,10 @@ stages:
 
 variables:
   IMAGE_NAME: custom-silverblue
+  # Set to true (Run pipeline -> variables, or in a schedule) to split the
+  # image into content-based layers with chunkah before pushing.
+  # See Containerfile.rechunk.
+  RECHUNK: "false"
 
 # Without this, pushes to branches with no matching job create empty pipelines.
 workflow:
@@ -72,6 +76,31 @@ image-build:
         .
       echo "Build: done"
 
+      # Optional: re-split the image into content-based layers with chunkah
+      # (Containerfile.rechunk). Only the :latest tag is rechunked; the other
+      # tags are then pointed at the chunked image, so every published tag is
+      # the chunked variant.
+      if [ "${RECHUNK:-false}" = "true" ]; then
+        echo "Rechunking into content-based layers (chunkah)"
+        CHUNKAH_EXTRA_ARGS="--label org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ) --label org.opencontainers.image.revision=${CI_COMMIT_SHA} --label org.opencontainers.image.source=${CI_PROJECT_URL}"
+        rm -rf out
+        buildah build \
+          --log-level=info \
+          --skip-unused-stages=false \
+          --from "localhost/${IMAGE_NAME}:latest" \
+          --security-opt=label=disable \
+          -v "$PWD:/run/src" \
+          --build-arg "CHUNKAH_EXTRA_ARGS=${CHUNKAH_EXTRA_ARGS}" \
+          --file Containerfile.rechunk \
+          --tag "localhost/${IMAGE_NAME}:latest" \
+          .
+        rm -rf out
+        buildah tag "localhost/${IMAGE_NAME}:latest" \
+          "localhost/${IMAGE_NAME}:${FEDORA_VERSION}" \
+          "localhost/${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+        echo "Rechunking: done"
+      fi
+
       # stdin keeps the token out of the process list.
       printf '%s' "${CI_REGISTRY_PASSWORD}" | buildah login \
         --username "${CI_REGISTRY_USER}" \
@@ -95,6 +124,10 @@ image-build:
           buildah rmi -f "${NAME}:${TAG}" >/dev/null 2>&1 || true
         done
       done
+      # With RECHUNK the pre-rechunk image is left untagged (its tags moved to
+      # the chunked result); drop dangling images so the runner's store does
+      # not grow a full image copy per rechunked build.
+      buildah rmi --prune -f >/dev/null 2>&1 || true
   artifacts:
     name: "image-digests-${CI_COMMIT_SHORT_SHA}"
     paths:
