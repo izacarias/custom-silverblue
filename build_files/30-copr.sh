@@ -14,6 +14,6 @@ sudo curl -sL "https://copr.fedorainfracloud.org/coprs/scottames/ghostty/repo/fe
   | sudo tee /etc/yum.repos.d/_copr:scottames:ghostty.repo
   
 dnf check-update
-dnf install ghostty
+dnf install -y ghostty
 
 
