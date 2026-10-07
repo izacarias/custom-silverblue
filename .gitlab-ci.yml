@@ -3,8 +3,9 @@
 # jobs. iso-build is self-contained the same way: it pulls the image back
 # from the registry instead of reusing image-build's local copy.
 #
-# Published tags: latest, <fedora version>, <commit sha>.
-# Fedora version is read from BASE_IMAGE_TAG in the Containerfile.
+# Published tags: latest, <fedora version>, <YYYYMMDD>-<5-char commit sha>.
+# Fedora version is read from BASE_IMAGE_TAG in the Containerfile. The date is
+# the pipeline creation date (UTC), so every job of a pipeline agrees on it.
 
 stages:
   - build
@@ -64,7 +65,9 @@ image-build:
 
       FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
       test -n "${FEDORA_VERSION}"
-      echo "Building Fedora Silverblue ${FEDORA_VERSION} at ${CI_COMMIT_SHA}"
+      BUILD_DATE="${CI_PIPELINE_CREATED_AT:0:10}"
+      IMAGE_TAG="${BUILD_DATE//-/}-${CI_COMMIT_SHA:0:5}"
+      echo "Building Fedora Silverblue ${FEDORA_VERSION} at ${CI_COMMIT_SHA} as ${IMAGE_TAG}"
 
       # Always exist so artifacts: paths never matches nothing.
       : > image-digests.txt
@@ -76,7 +79,7 @@ image-build:
       #   --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
       #   --tag "${IMAGE_NAME}:latest" \
       #   --tag "${IMAGE_NAME}:${FEDORA_VERSION}" \
-      #   --tag "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" \
+      #   --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
       #   .
 
       buildah build \
@@ -87,7 +90,7 @@ image-build:
         --label "org.opencontainers.image.source=${CI_PROJECT_URL}" \
         --tag "${IMAGE_NAME}:latest" \
         --tag "${IMAGE_NAME}:${FEDORA_VERSION}" \
-        --tag "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" \
+        --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
         .
       echo "Build: done"
 
@@ -112,7 +115,7 @@ image-build:
         rm -rf out
         buildah tag "localhost/${IMAGE_NAME}:latest" \
           "localhost/${IMAGE_NAME}:${FEDORA_VERSION}" \
-          "localhost/${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+          "localhost/${IMAGE_NAME}:${IMAGE_TAG}"
         echo "Rechunking: done"
       fi
 
@@ -123,7 +126,7 @@ image-build:
         "${CI_REGISTRY}"
       echo "Logging in to registry: done"
 
-      for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
+      for TAG in "latest" "${FEDORA_VERSION}" "${IMAGE_TAG}"; do
         buildah tag "localhost/${IMAGE_NAME}:${TAG}" "${CI_REGISTRY_IMAGE}:${TAG}"
         buildah push --digestfile "/tmp/digest.${TAG}" "${CI_REGISTRY_IMAGE}:${TAG}" 
         printf '%-12s %s\n' "${TAG}" "$(cat "/tmp/digest.${TAG}")" \
@@ -134,8 +137,10 @@ image-build:
     - |
       # Free the tags; layer cache is kept so the next build stays warm.
       FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
+      BUILD_DATE="${CI_PIPELINE_CREATED_AT:0:10}"
+      IMAGE_TAG="${BUILD_DATE//-/}-${CI_COMMIT_SHA:0:5}"
       for NAME in "localhost/${IMAGE_NAME}" "${CI_REGISTRY_IMAGE}"; do
-        for TAG in "latest" "${FEDORA_VERSION}" "${CI_COMMIT_SHORT_SHA}"; do
+        for TAG in "latest" "${FEDORA_VERSION}" "${IMAGE_TAG}"; do
           buildah rmi -f "${NAME}:${TAG}" >/dev/null 2>&1 || true
         done
       done
@@ -174,6 +179,8 @@ iso-build:
 
       FEDORA_VERSION="$(sed -n 's/^ARG BASE_IMAGE_TAG="\([0-9]*\)"/\1/p' Containerfile)"
       test -n "${FEDORA_VERSION}"
+      BUILD_DATE="${CI_PIPELINE_CREATED_AT:0:10}"
+      IMAGE_TAG="${BUILD_DATE//-/}-${CI_COMMIT_SHA:0:5}"
 
       # Fail early and clearly rather than an hour into the build.
       if [ -z "${CI_REGISTRY:-}" ]; then
@@ -227,14 +234,14 @@ iso-build:
       # bootc-image-builder generates ends with
       # `bootc switch --transport registry <payload ref>`, so this ref is what
       # the installed system ends up tracking.
-      ${ROOT} buildah pull "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+      ${ROOT} buildah pull "${CI_REGISTRY_IMAGE}:${IMAGE_TAG}"
       echo "Pulling image: done"
 
       ${ROOT} buildah build \
         --log-level=info \
         --file Containerfile.installer \
-        --from "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" \
-        --tag "localhost/${IMAGE_NAME}-installer:${CI_COMMIT_SHORT_SHA}" \
+        --from "${CI_REGISTRY_IMAGE}:${IMAGE_TAG}" \
+        --tag "localhost/${IMAGE_NAME}-installer:${IMAGE_TAG}" \
         .
       echo "Installer image: done"
 
@@ -249,8 +256,8 @@ iso-build:
         -v "${STORAGE_ROOT}:/var/lib/containers/storage" \
         "${BIB_IMAGE}" \
         --type bootc-installer \
-        --installer-payload-ref "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" \
-        "localhost/${IMAGE_NAME}-installer:${CI_COMMIT_SHORT_SHA}"
+        --installer-payload-ref "${CI_REGISTRY_IMAGE}:${IMAGE_TAG}" \
+        "localhost/${IMAGE_NAME}-installer:${IMAGE_TAG}"
       echo "ISO build: done"
 
       ISO_BUILD="$(find iso-out -type f -name '*.iso' -print -quit)"
@@ -260,7 +267,7 @@ iso-build:
         exit 1
       fi
 
-      ISO_NAME="custom-silverblue-${FEDORA_VERSION}-${CI_COMMIT_SHORT_SHA}.iso"
+      ISO_NAME="custom-silverblue-${FEDORA_VERSION}-${IMAGE_TAG}.iso"
       mv "${ISO_BUILD}" "${ISO_NAME}"
       sha256sum "${ISO_NAME}" | tee "${ISO_NAME}.sha256"
       OSBUILD_MANIFEST="$(find iso-out -maxdepth 1 -name 'manifest-*.json' -print -quit)"
@@ -270,7 +277,7 @@ iso-build:
 
       # Publish to the generic package registry; re-running the job replaces
       # what the previous run of the same commit uploaded.
-      PKG_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/installer-iso/${CI_COMMIT_SHORT_SHA}"
+      PKG_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/installer-iso/${IMAGE_TAG}"
       curl --fail --silent --show-error --request DELETE \
         --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         "${PKG_URL}/${ISO_NAME}" \
@@ -293,9 +300,11 @@ iso-build:
       else
         ROOT=""
       fi
+      BUILD_DATE="${CI_PIPELINE_CREATED_AT:0:10}"
+      IMAGE_TAG="${BUILD_DATE//-/}-${CI_COMMIT_SHA:0:5}"
       ${ROOT} buildah rmi -f \
-        "localhost/${IMAGE_NAME}-installer:${CI_COMMIT_SHORT_SHA}" \
-        "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}" >/dev/null 2>&1 || true
+        "localhost/${IMAGE_NAME}-installer:${IMAGE_TAG}" \
+        "${CI_REGISTRY_IMAGE}:${IMAGE_TAG}" >/dev/null 2>&1 || true
       # The pinned bootc-image-builder and the layer cache stay warm for the
       # next run; drop what this job layered on top of them.
       ${ROOT} buildah rmi --prune -f >/dev/null 2>&1 || true
