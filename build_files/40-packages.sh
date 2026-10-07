@@ -11,3 +11,9 @@ set -ouex pipefail
 dnf install -y \
 	vim \
 	distrobox
+
+# Starship
+curl -sS https://starship.rs/install.sh -o /tmp/starship.sh
+chmod +x /tmp/starship.sh
+sh /tmp/starship.sh -f -V -a x86_64 -p unknown-linux-musl
+rm -f /tmp/starship
