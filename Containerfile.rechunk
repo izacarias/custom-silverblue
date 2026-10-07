@@ -1,0 +1,44 @@
+# Splits the image built by Containerfile into content-based layers using
+# chunkah (https://github.com/coreos/chunkah). This is an opt-in CI
+# post-processing step (the RECHUNK variable in .gitlab-ci.yml); regular
+# builds never touch this file.
+#
+# Based on upstream Containerfile.splitter:
+# https://github.com/coreos/chunkah/releases/download/v0.7.0/Containerfile.splitter
+#
+# The base image is an ostree-based bootc image, so this follows chunkah's
+# "Compatibility with bootable (bootc) images" recipe: --prune /sysroot/
+# strips the ostree repository (the result is a plain bootc image) and
+# --max-layers 128 suits a large desktop rootfs.
+#
+# chunkah does not inherit the source image's config, so it is reconstructed
+# here: it must match Containerfile's final CMD. Provenance labels are
+# injected by the caller through CHUNKAH_EXTRA_ARGS; containers.bootc=1 is
+# required by bootc.
+#
+# Build with (buildah < 1.44 also needs the two bind/label flags, and leaves
+# an out/ directory behind that must be removed before the next run):
+#
+#   buildah build --skip-unused-stages=false --from <image> \
+#     --security-opt=label=disable -v "$PWD:/run/src" \
+#     [--build-arg CHUNKAH_EXTRA_ARGS="..."] \
+#     --file Containerfile.rechunk --tag <image> .
+
+ARG CHUNKAH=quay.io/coreos/chunkah:v0.7.0
+ARG CHUNKAH_ARGS="--prune /sysroot/ --max-layers 128 --label containers.bootc=1"
+ARG CHUNKAH_EXTRA_ARGS=""
+# Mirrors the config of the image built by Containerfile (its final CMD).
+ARG CHUNKAH_CONFIG_STR='{"Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],"Cmd":["/sbin/init"]}'
+
+# "overridden" is replaced by --from <image>; that image's rootfs is what
+# chunkah re-layers.
+FROM overridden AS target
+FROM ${CHUNKAH} AS chunkah
+ARG CHUNKAH_ARGS
+ARG CHUNKAH_EXTRA_ARGS
+ARG CHUNKAH_CONFIG_STR
+RUN --mount=type=bind,target=/run/src,rw \
+    --mount=from=target,target=/chunkah,ro \
+      chunkah build ${CHUNKAH_ARGS} ${CHUNKAH_EXTRA_ARGS} --output oci:/run/src/out
+
+FROM oci:out
