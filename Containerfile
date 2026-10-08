@@ -10,6 +10,15 @@ FROM scratch AS ctx
 COPY /build_files /build_files
 # COPY /system_files /system_files
 
+# Dash-to-Dock, built from the extensions/dash-to-dock git submodule. Built in
+# its own stage so make/sassc/gettext never end up in the final image.
+# VERSION is passed because the Makefile otherwise runs `git rev-parse HEAD`,
+# which fails here; keep it in sync with the submodule's release tag.
+FROM registry.fedoraproject.org/fedora:${BASE_IMAGE_TAG} AS dash-to-dock
+RUN dnf -y install make sassc gettext glib2 && dnf clean all
+COPY /extensions/dash-to-dock /src
+RUN make -C /src install DESTDIR=/out VERSION=109
+
 # Base Image
 FROM ${BASE_IMAGE_REF} AS base
 
@@ -21,6 +30,9 @@ RUN --mount=type=cache,dst=/var/cache \
     /usr/bin/systemctl preset brew-setup.service && \
     /usr/bin/systemctl preset brew-update.timer && \
     /usr/bin/systemctl preset brew-upgrade.timer
+
+# Dash-to-Dock system extension; enabled by default in 60-dash-to-dock.sh.
+COPY --from=dash-to-dock /out/usr /usr
 
 # Customizations
 RUN --mount=type=cache,dst=/var/cache \
