@@ -1,0 +1,3 @@
+[submodule "extensions/dash-to-dock"]
+	path = extensions/dash-to-dock
+	url = https://github.com/micheleg/dash-to-dock.git
