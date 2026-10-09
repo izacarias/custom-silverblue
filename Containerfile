@@ -19,6 +19,27 @@ RUN dnf -y install make sassc gettext glib2 && dnf clean all
 COPY /extensions/dash-to-dock /src
 RUN make -C /src install DESTDIR=/out VERSION=109
 
+# gnome-rounded-blur (extensions/gnome-rounded-blur submodule): native rounded
+# corners for Blur My Shell. Mirrors upstream's scripts/rounded_blur_build.sh,
+# but built against the base image so mutter-devel matches the shipped mutter.
+FROM ${BASE_IMAGE_REF} AS rounded-blur
+RUN dnf -y install gcc meson mutter-devel glib2-devel gobject-introspection-devel && dnf clean all
+COPY /extensions/gnome-rounded-blur /src
+RUN meson setup /build /src --prefix=/usr && \
+    meson compile -C /build && \
+    meson install -C /build --destdir /out
+
+# Blur My Shell (extensions/blur-my-shell submodule), packed with upstream's
+# `make build` (needs gnome-extensions, hence the base image) and unpacked as a
+# system extension.
+FROM ${BASE_IMAGE_REF} AS blur-my-shell
+RUN dnf -y install make gettext unzip && dnf clean all
+COPY /extensions/blur-my-shell /src
+RUN make -C /src build && \
+    mkdir -p /out/usr/share/gnome-shell/extensions/blur-my-shell@aunetx && \
+    unzip /src/build/blur-my-shell@aunetx.shell-extension.zip \
+          -d /out/usr/share/gnome-shell/extensions/blur-my-shell@aunetx
+
 # Base Image
 FROM ${BASE_IMAGE_REF} AS base
 
@@ -31,8 +52,14 @@ RUN --mount=type=cache,dst=/var/cache \
     /usr/bin/systemctl preset brew-update.timer && \
     /usr/bin/systemctl preset brew-upgrade.timer
 
-# Dash-to-Dock system extension; enabled by default in 60-dash-to-dock.sh.
+# Dash-to-Dock system extension; enabled by default in 60-gnome-extensions.sh.
 COPY --from=dash-to-dock /out/usr /usr
+
+# Blur My Shell + gnome-rounded-blur runtime files (no headers/gir/pkg-config);
+# enabled by default in 60-gnome-extensions.sh.
+COPY --from=rounded-blur /out/usr/lib64/libblur-effect-1.0.so* /usr/lib64/
+COPY --from=rounded-blur /out/usr/lib64/girepository-1.0/Blur-1.0.typelib /usr/lib64/girepository-1.0/
+COPY --from=blur-my-shell /out/usr /usr
 
 # Customizations
 RUN --mount=type=cache,dst=/var/cache \
