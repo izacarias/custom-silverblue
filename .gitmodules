@@ -1,3 +1,9 @@
 [submodule "extensions/dash-to-dock"]
 	path = extensions/dash-to-dock
 	url = https://github.com/micheleg/dash-to-dock.git
+[submodule "extensions/blur-my-shell"]
+	path = extensions/blur-my-shell
+	url = https://github.com/aunetx/blur-my-shell.git
+[submodule "extensions/gnome-rounded-blur"]
+	path = extensions/gnome-rounded-blur
+	url = https://github.com/kancko/gnome-rounded-blur.git

@@ -13,7 +13,7 @@ stages:
 
 variables:
   IMAGE_NAME: custom-silverblue
-  # Fetch extensions/dash-to-dock (git submodule) for the Containerfile build.
+  # Fetch the extensions/* git submodules for the Containerfile build.
   GIT_SUBMODULE_STRATEGY: recursive
   # Set to true (Run pipeline -> variables, or in a schedule) to split the
   # image into content-based layers with chunkah before pushing.
