@@ -38,7 +38,8 @@ COPY /extensions/blur-my-shell /src
 RUN make -C /src build && \
     mkdir -p /out/usr/share/gnome-shell/extensions/blur-my-shell@aunetx && \
     unzip /src/build/blur-my-shell@aunetx.shell-extension.zip \
-          -d /out/usr/share/gnome-shell/extensions/blur-my-shell@aunetx
+          -d /out/usr/share/gnome-shell/extensions/blur-my-shell@aunetx && \
+    glib-compile-schemas /out/usr/share/gnome-shell/extensions/blur-my-shell@aunetx/schemas
 
 # Base Image
 FROM ${BASE_IMAGE_REF} AS base
