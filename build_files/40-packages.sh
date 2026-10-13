@@ -10,6 +10,11 @@ set -ouex pipefail
 
 dnf install -y \
 	vim \
+	tcpdump \
+	inxi \
+	hwinfo \
+	nmap \
+	nmap-ncat \
 	distrobox
 
 # Starship
