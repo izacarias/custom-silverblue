@@ -17,6 +17,16 @@ for script in "$SCRIPT_DIR"/[0-9]*.sh; do
 	echo "::end-group:: ===$(basename "$script")==="
 done
 
+# Enabling systemd services
+# Podman
+systemctl start podman.socket
+systemctl start podman.service
+
+# Disabling services that are not used in my day-by-day usage
+# Passim (firmware update file sharing daemon)
+systemctl disable passim.service
+
+
 # Build residue from dnf/rpm-ostree would otherwise be baked into the image and
 # trip `bootc container lint`. Always clean up after the scripts, whatever
 # they installed.
