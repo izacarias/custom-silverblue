@@ -19,8 +19,7 @@ done
 
 # Enabling systemd services
 # Podman
-systemctl start podman.socket
-systemctl start podman.service
+systemctl enable podman.socket
 
 # Disabling services that are not used in my day-by-day usage
 # Passim (firmware update file sharing daemon)
