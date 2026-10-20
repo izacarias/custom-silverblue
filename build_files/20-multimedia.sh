@@ -16,6 +16,7 @@ set -ouex pipefail
 # "matches only excluded packages" warning and still exits 0; PackageKit's
 # GStreamer plugin is left out on purpose (per the Fedora wiki recipe).
 
+dnf upgrade --refresh && \
 dnf install -y \
 	--setopt=install_weak_deps=False \
 	--exclude=PackageKit-gstreamer-plugin \
