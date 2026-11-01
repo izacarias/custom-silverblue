@@ -17,10 +17,6 @@ for script in "$SCRIPT_DIR"/[0-9]*.sh; do
 	echo "::end-group:: ===$(basename "$script")==="
 done
 
-# Enabling systemd services
-# Podman
-systemctl enable podman.socket
-
 # Disabling services that are not used in my day-by-day usage
 # Passim (firmware update file sharing daemon)
 systemctl disable passim.service
