@@ -28,13 +28,17 @@ exists for exactly that reason — keep it.
 - Script order is load-bearing: `10-repos.sh` registers every third-party repo
   before later scripts install from it; `35-trim.sh` removes `podman-docker`
   before `40-dev-tooling.sh` installs `docker-ce` (hard conflict).
-- `Containerfile` has build stages for the three `extensions/` **git
-  submodules** (dash-to-dock, blur-my-shell, gnome-rounded-blur). CI must
-  check out submodules recursively. The dash-to-dock stage's `VERSION=NNN`
+- `Containerfile` has build stages for the four `extensions/` **git
+  submodules** (dash-to-dock, blur-my-shell, gnome-rounded-blur,
+  status-tray). CI must check out submodules recursively. The dash-to-dock
+  stage's `VERSION=NNN`
   must match the submodule's release tag when bumping it. gnome-rounded-blur
   must be new enough for the shipped mutter: v1.0.2+ auto-detects the
   `libmutter-*.pc` name (renamed at GNOME 51), older pins hardcode
   `libmutter-18` and fail with `Dependency "libmutter-18" not found`.
+  status-tray is pure JS: its stage only copies `src/` and runs
+  `glib-compile-schemas`; its `metadata.json` `shell-version` must cover the
+  shipped GNOME Shell.
 - CI: `.gitlab-ci.yml` and `.github/workflows/build-image.yml` are thin
   wrappers around `ci/build-image.sh` / `ci/build-iso.sh`. Change build logic
   in `ci/*.sh`, never in only one CI file. Both publish one image with tags

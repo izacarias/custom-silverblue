@@ -41,6 +41,14 @@ RUN make -C /src build && \
           -d /out/usr/share/gnome-shell/extensions/blur-my-shell@aunetx && \
     glib-compile-schemas /out/usr/share/gnome-shell/extensions/blur-my-shell@aunetx/schemas
 
+# Status Tray (extensions/status-tray submodule): AppIndicator/StatusNotifierItem
+# system tray. Pure JS, so the only build step is compiling its GSettings schema.
+FROM ${BASE_IMAGE_REF} AS status-tray
+COPY /extensions/status-tray/src /src
+RUN mkdir -p /out/usr/share/gnome-shell/extensions/status-tray@keithvassallo.com && \
+    cp -a /src/. /out/usr/share/gnome-shell/extensions/status-tray@keithvassallo.com/ && \
+    glib-compile-schemas /out/usr/share/gnome-shell/extensions/status-tray@keithvassallo.com/schemas
+
 # Base Image
 FROM ${BASE_IMAGE_REF} AS base
 
@@ -61,6 +69,9 @@ COPY --from=dash-to-dock /out/usr /usr
 COPY --from=rounded-blur /out/usr/lib64/libblur-effect-1.0.so* /usr/lib64/
 COPY --from=rounded-blur /out/usr/lib64/girepository-1.0/Blur-1.0.typelib /usr/lib64/girepository-1.0/
 COPY --from=blur-my-shell /out/usr /usr
+
+# Status Tray system extension; enabled by default in 60-gnome-extensions.sh.
+COPY --from=status-tray /out/usr /usr
 
 # Customizations
 RUN --mount=type=cache,dst=/var/cache \

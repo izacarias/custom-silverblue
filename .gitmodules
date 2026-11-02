@@ -7,3 +7,6 @@
 [submodule "extensions/gnome-rounded-blur"]
 	path = extensions/gnome-rounded-blur
 	url = https://github.com/kancko/gnome-rounded-blur.git
+[submodule "extensions/status-tray"]
+	path = extensions/status-tray
+	url = https://github.com/keithvassallomt/status-tray.git
