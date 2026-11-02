@@ -28,8 +28,9 @@ the single source of truth for the Fedora release.
 - **Virtual machines** (Bluefin DX minus Cockpit/Incus): QEMU/KVM, libvirt,
   virt-manager/viewer/v2v, edk2-ovmf; users are added to the `docker` and
   `libvirt` groups at first boot
-- **GNOME extensions**: Dash-to-Dock and Blur My Shell (with the
-  gnome-rounded-blur mutter plugin), enabled by default for all users
+- **GNOME extensions**: Dash-to-Dock, Blur My Shell (with the
+  gnome-rounded-blur mutter plugin) and Status Tray (AppIndicator /
+  StatusNotifierItem system tray), enabled by default for all users
 - **Homebrew** from `ghcr.io/ublue-os/brew` (setup/update units preset;
   unpacks on first boot)
 - **Cisco Secure Client** VPN module (TU Braunschweig), with a tmpfiles.d

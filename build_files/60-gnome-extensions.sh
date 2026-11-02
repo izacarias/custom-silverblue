@@ -2,13 +2,13 @@
 
 set -ouex pipefail
 
-# Enables the bundled GNOME extensions (Dash-to-Dock, Blur My Shell) for every
-# user by default. They are built from the extensions/ submodules and copied
-# into /usr by the Containerfile. This sets the schema default, so users who
-# already changed their extension list keep it, and anyone can still disable
-# them.
+# Enables the bundled GNOME extensions (Dash-to-Dock, Blur My Shell, Status
+# Tray) for every user by default. They are built from the extensions/
+# submodules and copied into /usr by the Containerfile. This sets the schema
+# default, so users who already changed their extension list keep it, and
+# anyone can still disable them.
 
-extensions="'dash-to-dock@micxgx.gmail.com', 'blur-my-shell@aunetx'"
+extensions="'dash-to-dock@micxgx.gmail.com', 'blur-my-shell@aunetx', 'status-tray@keithvassallo.com'"
 
 # Keep Fedora's own default extension enabled if the base image ships it.
 if [ -d /usr/share/gnome-shell/extensions/background-logo@fedorahosted.org ]; then

@@ -54,5 +54,7 @@ test -x /usr/bin/starship
 # Built by the Containerfile extension stages
 test -d /usr/share/gnome-shell/extensions/dash-to-dock@micxgx.gmail.com
 test -d /usr/share/gnome-shell/extensions/blur-my-shell@aunetx
+test -d /usr/share/gnome-shell/extensions/status-tray@keithvassallo.com
+test -f /usr/share/gnome-shell/extensions/status-tray@keithvassallo.com/schemas/gschemas.compiled
 
 echo "All checks passed"
