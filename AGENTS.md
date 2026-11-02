@@ -11,6 +11,9 @@ the test suite. Deeper background: `README.md`; architecture detail:
 ```bash
 podman build --file Containerfile --tag custom-silverblue:latest .   # the real check
 bash -n build_files/*.sh ci/*.sh                                     # cheap syntax check
+git submodule update --init --recursive   # after a branch switch: a submodule
+                                           # added on another branch lands as an
+                                           # empty dir and the build's COPY fails
 ```
 
 Success = `build_files/99-verify.sh` passes (runs inside the build) and

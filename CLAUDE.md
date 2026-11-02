@@ -14,6 +14,10 @@ podman build --file Containerfile --tag custom-silverblue:latest .
 
 # Quick syntax check of the build and CI scripts (does not run them)
 bash -n build_files/*.sh ci/*.sh
+
+# After a branch switch: a submodule added on another branch lands as an
+# empty directory, and the Containerfile's COPY of it then fails
+git submodule update --init --recursive
 ```
 
 A build only counts as successful if `99-verify.sh` passes and `bootc container lint` is clean at the end of `Containerfile`. Any build residue left in `/var`, `/run` or caches will make the lint fail.
