@@ -49,6 +49,24 @@ RUN mkdir -p /out/usr/share/gnome-shell/extensions/status-tray@keithvassallo.com
     cp -a /src/. /out/usr/share/gnome-shell/extensions/status-tray@keithvassallo.com/ && \
     glib-compile-schemas /out/usr/share/gnome-shell/extensions/status-tray@keithvassallo.com/schemas
 
+# Gradia Capture (extensions/gradia-capture submodule): screenshot
+# annotations. Pure JS, so the only build step is compiling its GSettings
+# schema. Unlike status-tray, the install layout also needs icons/ and
+# schemas/ — both live outside src/ upstream, and src/tools.js loads icons
+# from an icons/ dir next to extension.js (the same layout upstream's
+# `gnome-extensions pack` build.sh produces). The UUID says "gradia-integration"
+# although the repo is "gradia-capture"; it must match metadata.json, so keep
+# it verbatim.
+FROM ${BASE_IMAGE_REF} AS gradia-capture
+COPY /extensions/gradia-capture/src /src
+COPY /extensions/gradia-capture/icons /icons
+COPY /extensions/gradia-capture/schemas /schemas
+RUN mkdir -p /out/usr/share/gnome-shell/extensions/gradia-integration@alexandervanhee.github.io && \
+    cp -a /src/. /out/usr/share/gnome-shell/extensions/gradia-integration@alexandervanhee.github.io/ && \
+    cp -a /icons /out/usr/share/gnome-shell/extensions/gradia-integration@alexandervanhee.github.io/icons && \
+    cp -a /schemas /out/usr/share/gnome-shell/extensions/gradia-integration@alexandervanhee.github.io/schemas && \
+    glib-compile-schemas /out/usr/share/gnome-shell/extensions/gradia-integration@alexandervanhee.github.io/schemas
+
 # Base Image
 FROM ${BASE_IMAGE_REF} AS base
 
@@ -72,6 +90,9 @@ COPY --from=blur-my-shell /out/usr /usr
 
 # Status Tray system extension; enabled by default in 60-gnome-extensions.sh.
 COPY --from=status-tray /out/usr /usr
+
+# Gradia Capture system extension; enabled by default in 60-gnome-extensions.sh.
+COPY --from=gradia-capture /out/usr /usr
 
 # Customizations
 RUN --mount=type=cache,dst=/var/cache \
