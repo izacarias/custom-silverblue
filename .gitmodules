@@ -10,3 +10,6 @@
 [submodule "extensions/status-tray"]
 	path = extensions/status-tray
 	url = https://github.com/keithvassallomt/status-tray.git
+[submodule "extensions/gradia-capture"]
+	path = extensions/gradia-capture
+	url = https://github.com/AlexanderVanhee/gradia-capture.git

@@ -29,8 +29,9 @@ the single source of truth for the Fedora release.
   virt-manager/viewer/v2v, edk2-ovmf; users are added to the `docker` and
   `libvirt` groups at first boot
 - **GNOME extensions**: Dash-to-Dock, Blur My Shell (with the
-  gnome-rounded-blur mutter plugin) and Status Tray (AppIndicator /
-  StatusNotifierItem system tray), enabled by default for all users
+  gnome-rounded-blur mutter plugin), Status Tray (AppIndicator /
+  StatusNotifierItem system tray) and Gradia Capture (screenshot
+  annotations), enabled by default for all users
 - **Homebrew** from `ghcr.io/ublue-os/brew` (setup/update units preset;
   unpacks on first boot)
 - **Cisco Secure Client** VPN module (TU Braunschweig), with a tmpfiles.d
