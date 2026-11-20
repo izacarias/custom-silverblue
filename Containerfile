@@ -1,6 +1,6 @@
-ARG BASE_IMAGE_NAME="silverblue"
+ARG BASE_IMAGE_NAME="fedora-silverblue"
 ARG BASE_IMAGE_TAG="45"
-ARG BASE_IMAGE_REPO="quay.io/fedora-ostree-desktops"
+ARG BASE_IMAGE_REPO="quay.io/fedora"
 ARG BASE_IMAGE_REF="${BASE_IMAGE_REPO}/${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG}"
 
 # Scripts are mounted temporarily to avoid copying them to the image
@@ -15,7 +15,7 @@ COPY /build_files /build_files
 # its own stage so make/sassc/gettext never end up in the final image.
 # VERSION is passed because the Makefile otherwise runs `git rev-parse HEAD`,
 # which fails here; keep it in sync with the submodule's release tag.
-FROM registry.fedoraproject.org/fedora:${BASE_IMAGE_TAG} AS dash-to-dock
+FROM ${BASE_IMAGE_REF} AS dash-to-dock
 RUN dnf -y install make sassc gettext glib2 && dnf clean all
 COPY /extensions/dash-to-dock /src
 RUN make -C /src install DESTDIR=/out VERSION=109
