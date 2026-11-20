@@ -53,6 +53,8 @@ PACKAGES=(
 	nerd-fonts
 	oddjob-mkhomedir
 	openssh-askpass
+	pam-u2f 
+	pamu2fcfg
 	powerstat
 	powertop
 	printer-driver-brlaser
@@ -75,6 +77,7 @@ PACKAGES=(
 	wl-clipboard
 	xdg-terminal-exec
 	xprop
+	yubikey-manager
 	zenity
 )
 

@@ -3,11 +3,12 @@ ARG BASE_IMAGE_TAG="45"
 ARG BASE_IMAGE_REPO="quay.io/fedora-ostree-desktops"
 ARG BASE_IMAGE_REF="${BASE_IMAGE_REPO}/${BASE_IMAGE_NAME}:${BASE_IMAGE_TAG}"
 
-# Allow build scripts are not copied to the final image
-# instead the volume is mounted and scripts are referenced
-# from there
+# Scripts are mounted temporarily to avoid copying them to the image
 FROM scratch AS ctx
 COPY /build_files /build_files
+
+# Use to copy system and configuration files to the final image.
+# Not used, but left here for reference.
 # COPY /system_files /system_files
 
 # Dash-to-Dock, built from the extensions/dash-to-dock git submodule. Built in
